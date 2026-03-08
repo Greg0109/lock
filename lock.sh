@@ -11,7 +11,7 @@
 #   If grim fails, the script falls back to XDG Desktop Portal,
 #   which requires: sudo apt install python3-dbus python3-gi
 
-icon="$HOME/Documents/lock/lock.png"
+icon="$HOME/Projects/lock/lock.png"
 img=$(mktemp /tmp/XXXXXXXXXX.png)
 
 # Take a screenshot of current desktop (Wayland/X11)
