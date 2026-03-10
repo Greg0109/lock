@@ -4,6 +4,8 @@ A Linux lock screen that captures a screenshot of your desktop, applies pixelati
 
 ![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-blue)
 
+![Example lock screen](example.png)
+
 ## Features
 
 - Captures a screenshot using the first available tool on your system
