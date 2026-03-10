@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import platform
 import shutil
 import subprocess
 import sys
@@ -105,13 +106,18 @@ sys.exit(1)
         return False
 
 
+def _try_screencapture(path: str) -> bool:
+    """Method 6: screencapture (macOS built-in)."""
+    return _run(["screencapture", "-x", path], path)
+
+
 def _try_scrot(path: str) -> bool:
-    """Method 6: scrot (X11 fallback)."""
+    """Method 7: scrot (X11 fallback)."""
     return _run(["scrot", path], path)
 
 
 def _try_import(path: str) -> bool:
-    """Method 7: ImageMagick import (X11 fallback)."""
+    """Method 8: ImageMagick import (X11 fallback)."""
     return _run(["import", "-window", "root", path], path)
 
 
@@ -124,18 +130,26 @@ METHODS = [
     _try_import,
 ]
 
+MACOS_METHODS = [
+    _try_screencapture,
+]
+
 
 def capture(path: str) -> bool:
     """Try each screenshot method in order, return True on first success."""
     print(f"Attempting to capture screenshot to {path} using multiple methods...", file=sys.stderr)
-    for method in METHODS:
+    METHOD_TO_USE = MACOS_METHODS if platform.system() == "Darwin" else METHODS
+    for method in METHOD_TO_USE:
         try:
             method(path)
             if os.path.isfile(path) and os.path.getsize(path) > 0:
                 print(f"  {method.__name__} succeeded.", file=sys.stderr)
                 return True
             else:
-                print(f"  {method.__name__} ran but did not produce a valid screenshot.", file=sys.stderr)
+                print(
+                    f"  {method.__name__} ran but did not produce a valid screenshot.",
+                    file=sys.stderr,
+                )
         except Exception as e:
             print(f"Warning: {method.__name__} failed with error: {e}", file=sys.stderr)
             continue

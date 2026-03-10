@@ -1,6 +1,6 @@
 # lock-screen
 
-A Linux lock screen that captures a screenshot of your desktop, applies pixelation and blur effects, optionally overlays a lock icon, and then locks the session. Works on both Wayland and X11.
+A lock screen that captures a screenshot of your desktop, applies pixelation and blur effects, optionally overlays a lock icon, and then locks the session. Works on Wayland, X11, and macOS.
 
 ![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-blue)
 
@@ -12,7 +12,7 @@ A Linux lock screen that captures a screenshot of your desktop, applies pixelati
 - Applies configurable pixelation and Gaussian blur
 - Centers a lock icon on each connected display
 - Supports multi-monitor setups (via `wlr-randr` or `xrandr`)
-- Works on Wayland (swaylock) and X11 (i3lock / i3lock-color)
+- Works on Wayland (swaylock), X11 (i3lock / i3lock-color), and macOS
 
 ## Requirements
 
@@ -31,8 +31,9 @@ The program tries each tool in order and uses the first one that succeeds:
 | 2        | `gnome-screenshot`    | GNOME (Wayland / X11)   |
 | 3        | `spectacle`           | KDE Plasma               |
 | 4        | XDG Desktop Portal    | Any Wayland (fallback)   |
-| 5        | `scrot`               | X11                      |
-| 6        | `import` (ImageMagick)| X11                      |
+| 5        | `screencapture`       | macOS (built-in)         |
+| 6        | `scrot`               | X11                      |
+| 7        | `import` (ImageMagick)| X11                      |
 
 ### Image processing
 
@@ -41,6 +42,9 @@ The program tries each tool in order and uses the first one that succeeds:
 ```bash
 # Debian / Ubuntu
 sudo apt install imagemagick
+
+# macOS
+brew install imagemagick
 ```
 
 ### Lock backend (at least one)
@@ -49,6 +53,7 @@ sudo apt install imagemagick
 | -------- | --------------------------- |
 | Wayland  | `swaylock`                  |
 | X11      | `i3lock-color` or `i3lock`  |
+| macOS    | built-in (`pmset`)          |
 
 ```bash
 # Wayland
@@ -60,7 +65,7 @@ sudo apt install i3lock-color   # or: sudo apt install i3lock
 
 ### Display geometry (optional, for multi-monitor icon placement)
 
-- `wlr-randr` (wlroots compositors) **or** `xrandr` (X11)
+- `wlr-randr` (wlroots compositors) **or** `xrandr` (X11) **or** `system_profiler` (macOS, built-in)
 
 ## Installation
 

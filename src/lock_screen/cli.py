@@ -60,6 +60,7 @@ def main(argv: list[str] | None = None) -> None:
 
     if os.environ.get("LOCK_SCREEN_DEBUG", "False").lower() == "true":
         import debugpy
+
         debugpy.listen(("localhost", 5678))
         print("Waiting for debugger to attach on port 5678...")
         debugpy.wait_for_client()
@@ -68,12 +69,19 @@ def main(argv: list[str] | None = None) -> None:
     try:
         # Capture screenshot
         if not capture(img_path):
+            import platform
+
+            if platform.system() == "Darwin":
+                hint = "  macOS: screencapture should be available by default"
+            else:
+                hint = (
+                    "  COSMIC/wlroots: sudo apt install grim\n"
+                    "  GNOME:          sudo apt install gnome-screenshot\n"
+                    "  KDE:            sudo apt install spectacle\n"
+                    "  X11:            sudo apt install scrot"
+                )
             print(
-                "Error: Failed to capture screenshot. Install one of:\n"
-                "  COSMIC/wlroots: sudo apt install grim\n"
-                "  GNOME:          sudo apt install gnome-screenshot\n"
-                "  KDE:            sudo apt install spectacle\n"
-                "  X11:            sudo apt install scrot",
+                f"Error: Failed to capture screenshot. Install one of:\n{hint}",
                 file=sys.stderr,
             )
             sys.exit(1)

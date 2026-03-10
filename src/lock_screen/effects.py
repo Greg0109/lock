@@ -2,12 +2,25 @@
 
 from __future__ import annotations
 
+import json
+import platform
+import shutil
 import subprocess
+
+_MAGICK_CMD: list[str] | None = None
+
+
+def _magick_cmd() -> list[str]:
+    """Return the ImageMagick convert command, preferring IMv7 'magick'."""
+    global _MAGICK_CMD  # noqa: PLW0603
+    if _MAGICK_CMD is None:
+        _MAGICK_CMD = ["magick"] if shutil.which("magick") else ["convert"]
+    return _MAGICK_CMD
 
 
 def _convert(args: list[str]) -> None:
-    """Run an ImageMagick convert command."""
-    subprocess.run(["convert", *args], check=True)
+    """Run an ImageMagick convert/magick command."""
+    subprocess.run([*_magick_cmd(), *args], check=True)
 
 
 def pixelate(image_path: str, scale_down: int = 10) -> None:
@@ -108,6 +121,35 @@ def _get_display_geometries() -> list[dict[str, int]]:
     except (subprocess.CalledProcessError, FileNotFoundError):
         pass
 
+    # Fallback: macOS system_profiler
+    if platform.system() == "Darwin":
+        try:
+            result = subprocess.run(
+                ["system_profiler", "SPDisplaysDataType", "-json"],
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+            data = json.loads(result.stdout)
+            for controller in data.get("SPDisplaysDataType", []):
+                for display in controller.get("spdisplays_ndrvs", []):
+                    res = display.get("_spdisplays_resolution", "")
+                    if "x" not in res:
+                        continue
+                    # Format: "1920 x 1080" or "1920 x 1080 @ 60Hz"
+                    parts = res.split("@")[0].strip().split(" x ")
+                    if len(parts) == 2:
+                        try:
+                            w = int(parts[0].strip())
+                            h = int(parts[1].strip())
+                            displays.append({"width": w, "height": h, "x": 0, "y": 0})
+                        except ValueError:
+                            pass
+            if displays:
+                return displays
+        except (subprocess.CalledProcessError, FileNotFoundError, json.JSONDecodeError):
+            pass
+
     return displays
 
 
@@ -121,8 +163,9 @@ def composite_icon(image_path: str, icon_path: str) -> None:
         return
 
     # Get icon dimensions
+    identify_cmd = ["magick", "identify"] if shutil.which("magick") else ["identify"]
     result = subprocess.run(
-        ["identify", "-format", "%w %h", icon_path],
+        [*identify_cmd, "-format", "%w %h", icon_path],
         capture_output=True,
         text=True,
         check=True,
