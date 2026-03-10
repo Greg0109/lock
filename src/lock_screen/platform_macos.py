@@ -9,6 +9,15 @@ import subprocess
 import sys
 import time
 
+
+def delete_temp_file(path: str) -> None:
+    """Delete the temporary screenshot file if it exists."""
+    try:
+        if os.path.isfile(path):
+            os.remove(path)
+    except Exception as e:
+        print(f"Warning: Failed to delete temp file {path}: {e}", file=sys.stderr)
+
 # -- Screenshot methods ----------------------------------------------------
 
 
@@ -207,3 +216,4 @@ def lock(image_path: str) -> None:
     finally:
         print("Restoring original wallpapers...", file=sys.stderr)
         restore_wallpapers(originals)
+        delete_temp_file(abs_path)
