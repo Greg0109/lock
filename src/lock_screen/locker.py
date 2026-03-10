@@ -116,37 +116,61 @@ def _restore_macos_wallpapers(paths: list[str]) -> None:
         print(f"Warning: wallpaper restore failed: {result.stderr.strip()}", file=sys.stderr)
 
 
-def _is_macos_display_asleep() -> bool:
-    """Check whether the macOS main display is currently asleep."""
+def _is_macos_session_locked() -> bool:
+    """Check whether the macOS session is currently locked."""
     import ctypes
+    import ctypes.util
 
     cg = ctypes.CDLL("/System/Library/Frameworks/CoreGraphics.framework/CoreGraphics")
-    cg.CGMainDisplayID.restype = ctypes.c_uint32
-    cg.CGDisplayIsAsleep.restype = ctypes.c_int32
-    cg.CGDisplayIsAsleep.argtypes = [ctypes.c_uint32]
-    return bool(cg.CGDisplayIsAsleep(cg.CGMainDisplayID()))
+    cf = ctypes.CDLL("/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation")
+
+    cg.CGSessionCopyCurrentDictionary.restype = ctypes.c_void_p
+    cf.CFDictionaryGetValue.restype = ctypes.c_void_p
+    cf.CFDictionaryGetValue.argtypes = [ctypes.c_void_p, ctypes.c_void_p]
+    cf.CFBooleanGetValue.restype = ctypes.c_bool
+    cf.CFBooleanGetValue.argtypes = [ctypes.c_void_p]
+    cf.CFRelease.argtypes = [ctypes.c_void_p]
+
+    # Create CFString for the key
+    cf.CFStringCreateWithCString.restype = ctypes.c_void_p
+    cf.CFStringCreateWithCString.argtypes = [ctypes.c_void_p, ctypes.c_char_p, ctypes.c_uint32]
+    k_utf8 = 0x08000100
+    key = cf.CFStringCreateWithCString(None, b"CGSSessionScreenIsLocked", k_utf8)
+
+    try:
+        d = cg.CGSessionCopyCurrentDictionary()
+        if not d:
+            return False
+        try:
+            val = cf.CFDictionaryGetValue(d, key)
+            if not val:
+                return False
+            return cf.CFBooleanGetValue(val)
+        finally:
+            cf.CFRelease(d)
+    finally:
+        if key:
+            cf.CFRelease(key)
 
 
 def _wait_for_macos_unlock() -> None:
-    """Block until the display sleeps and then wakes back up."""
-    # Phase 1: wait for the display to actually go to sleep
-    deadline = time.monotonic() + 10
+    """Block until the session locks and then unlocks."""
+    # Phase 1: wait for the session to actually lock
+    deadline = time.monotonic() + 15
     while time.monotonic() < deadline:
-        if _is_macos_display_asleep():
-            print("  Display is asleep.", file=sys.stderr)
+        if _is_macos_session_locked():
+            print("  Session is locked.", file=sys.stderr)
             break
         time.sleep(0.3)
     else:
-        # Display never slept (user moved mouse in time) — nothing to wait for
-        print("  Display never slept, restoring immediately.", file=sys.stderr)
+        print("  Session never locked, restoring immediately.", file=sys.stderr)
         return
 
-    # Phase 2: wait for the display to come back on (user unlocked)
-    while _is_macos_display_asleep():
+    # Phase 2: wait for the user to unlock
+    while _is_macos_session_locked():
         time.sleep(1)
 
-    print("  Display woke up, restoring wallpaper.", file=sys.stderr)
-    # Small grace period so the desktop is fully rendered before wallpaper swap
+    print("  Session unlocked, restoring wallpaper.", file=sys.stderr)
     time.sleep(1)
 
 
@@ -167,7 +191,6 @@ def _lock_macos(image_path: str) -> None:
             print("Error: Failed to lock screen via pmset.", file=sys.stderr)
             sys.exit(1)
 
-        time.sleep(1)
         _wait_for_macos_unlock()
     finally:
         print("Restoring original wallpapers...", file=sys.stderr)
