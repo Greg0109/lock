@@ -133,11 +133,16 @@ def _get_display_geometries() -> list[dict[str, int]]:
             data = json.loads(result.stdout)
             for controller in data.get("SPDisplaysDataType", []):
                 for display in controller.get("spdisplays_ndrvs", []):
-                    res = display.get("_spdisplays_resolution", "")
-                    if "x" not in res:
-                        continue
-                    # Format: "1920 x 1080" or "1920 x 1080 @ 60Hz"
-                    parts = res.split("@")[0].strip().split(" x ")
+                    # Prefer native pixel resolution (matches screencapture output)
+                    pixel_res = display.get("_spdisplays_pixels", "")
+                    if pixel_res and "x" in pixel_res:
+                        parts = pixel_res.strip().split(" x ")
+                    else:
+                        # Fall back to logical resolution
+                        res = display.get("_spdisplays_resolution", "")
+                        if "x" not in res:
+                            continue
+                        parts = res.split("@")[0].strip().split(" x ")
                     if len(parts) == 2:
                         try:
                             w = int(parts[0].strip())
