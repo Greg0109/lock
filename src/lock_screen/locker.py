@@ -51,19 +51,20 @@ def _lock_x11(image_path: str) -> None:
 
 
 def _get_macos_wallpapers() -> list[str]:
-    """Return the current wallpaper POSIX path for each desktop."""
+    """Return the current wallpaper POSIX path for each screen."""
     script = (
-        'tell application "System Events"\n'
-        "  set desktopCount to count of desktops\n"
-        '  set paths to ""\n'
-        "  repeat with i from 1 to desktopCount\n"
-        "    set paths to paths & POSIX path of picture of desktop i & linefeed\n"
-        "  end repeat\n"
-        "  return paths\n"
-        "end tell"
+        "ObjC.import('AppKit');"
+        "var screens = $.NSScreen.screens;"
+        "var ws = $.NSWorkspace.sharedWorkspace;"
+        "var paths = [];"
+        "for (var i = 0; i < screens.count; i++) {"
+        "  var url = ws.desktopImageURLForScreen(screens.objectAtIndex(i));"
+        "  if (url) paths.push(url.path.js);"
+        "}"
+        "paths.join('\\n');"
     )
     result = subprocess.run(
-        ["osascript", "-e", script],
+        ["osascript", "-l", "JavaScript", "-e", script],
         capture_output=True,
         text=True,
     )
@@ -73,70 +74,88 @@ def _get_macos_wallpapers() -> list[str]:
 
 
 def _set_macos_wallpaper(image_path: str) -> None:
-    """Set all desktops to the given wallpaper image."""
-    safe = image_path.replace('"', '\\"')
+    """Set all screens to the given wallpaper image."""
     script = (
-        f'tell application "System Events" to set picture of every desktop to POSIX file "{safe}"'
+        "ObjC.import('AppKit');"
+        "var ws = $.NSWorkspace.sharedWorkspace;"
+        "var screens = $.NSScreen.screens;"
+        f"var url = $.NSURL.fileURLWithPath('{image_path}');"
+        "for (var i = 0; i < screens.count; i++) {"
+        "  ws.setDesktopImageURLForScreenOptionsError("
+        "    url, screens.objectAtIndex(i), $(), $());"
+        "}"
     )
-    subprocess.run(["osascript", "-e", script], check=True)
+    subprocess.run(["osascript", "-l", "JavaScript", "-e", script], check=True)
 
 
 def _restore_macos_wallpapers(paths: list[str]) -> None:
-    """Restore each desktop to its original wallpaper."""
+    """Restore each screen to its original wallpaper."""
     if not paths:
         return
-    lines = []
-    for i, p in enumerate(paths, 1):
-        safe = p.replace('"', '\\"')
-        lines.append(f'  set picture of desktop {i} to POSIX file "{safe}"')
-    inner = "\n".join(lines)
-    script = f'tell application "System Events"\n{inner}\nend tell'
-    subprocess.run(["osascript", "-e", script], capture_output=True)
-
-
-def _is_macos_screen_locked() -> bool:
-    """Check whether the macOS session is currently locked."""
-    script = (
-        "ObjC.import('Quartz');"
-        "var d = $.CGSessionCopyCurrentDictionary();"
-        "var v = d.objectForKey('CGSSessionScreenIsLocked');"
-        "v ? v.boolValue : false;"
-    )
-    try:
-        result = subprocess.run(
-            ["osascript", "-l", "JavaScript", "-e", script],
-            capture_output=True,
-            text=True,
-            timeout=5,
+    set_lines = []
+    for i, p in enumerate(paths):
+        set_lines.append(
+            f"  var url{i} = $.NSURL.fileURLWithPath('{p}');"
+            f"  if ({i} < screens.count)"
+            f"    ws.setDesktopImageURLForScreenOptionsError("
+            f"      url{i}, screens.objectAtIndex({i}), $(), $());"
         )
-        return result.stdout.strip() == "true"
-    except (subprocess.TimeoutExpired, subprocess.CalledProcessError):
-        return False
+    inner = "\n".join(set_lines)
+    script = (
+        "ObjC.import('AppKit');\n"
+        "var ws = $.NSWorkspace.sharedWorkspace;\n"
+        "var screens = $.NSScreen.screens;\n"
+        f"{inner}"
+    )
+    result = subprocess.run(
+        ["osascript", "-l", "JavaScript", "-e", script],
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        print(f"Warning: wallpaper restore failed: {result.stderr.strip()}", file=sys.stderr)
+
+
+def _is_macos_display_asleep() -> bool:
+    """Check whether the macOS main display is currently asleep."""
+    import ctypes
+
+    cg = ctypes.CDLL("/System/Library/Frameworks/CoreGraphics.framework/CoreGraphics")
+    cg.CGMainDisplayID.restype = ctypes.c_uint32
+    cg.CGDisplayIsAsleep.restype = ctypes.c_int32
+    cg.CGDisplayIsAsleep.argtypes = [ctypes.c_uint32]
+    return bool(cg.CGDisplayIsAsleep(cg.CGMainDisplayID()))
 
 
 def _wait_for_macos_unlock() -> None:
-    """Block until the user unlocks the screen after a lock event."""
-    was_locked = False
-    unlocked_checks = 0
-    while True:
-        if _is_macos_screen_locked():
-            was_locked = True
-            unlocked_checks = 0
-        elif was_locked:
-            # Transitioned from locked → unlocked
-            return
-        else:
-            unlocked_checks += 1
-            if unlocked_checks > 15:
-                # ~30 s without ever locking — display woke within grace period
-                return
-        time.sleep(2)
+    """Block until the display sleeps and then wakes back up."""
+    # Phase 1: wait for the display to actually go to sleep
+    deadline = time.monotonic() + 10
+    while time.monotonic() < deadline:
+        if _is_macos_display_asleep():
+            print("  Display is asleep.", file=sys.stderr)
+            break
+        time.sleep(0.3)
+    else:
+        # Display never slept (user moved mouse in time) — nothing to wait for
+        print("  Display never slept, restoring immediately.", file=sys.stderr)
+        return
+
+    # Phase 2: wait for the display to come back on (user unlocked)
+    while _is_macos_display_asleep():
+        time.sleep(1)
+
+    print("  Display woke up, restoring wallpaper.", file=sys.stderr)
+    # Small grace period so the desktop is fully rendered before wallpaper swap
+    time.sleep(1)
 
 
 def _lock_macos(image_path: str) -> None:
     """Lock macOS: swap wallpaper, sleep display, restore after unlock."""
     abs_path = os.path.abspath(image_path)
     originals = _get_macos_wallpapers()
+
+    print(f"Original wallpapers: {originals}", file=sys.stderr)
 
     try:
         _set_macos_wallpaper(abs_path)
@@ -148,7 +167,8 @@ def _lock_macos(image_path: str) -> None:
             print("Error: Failed to lock screen via pmset.", file=sys.stderr)
             sys.exit(1)
 
-        time.sleep(3)
+        time.sleep(1)
         _wait_for_macos_unlock()
     finally:
+        print("Restoring original wallpapers...", file=sys.stderr)
         _restore_macos_wallpapers(originals)
