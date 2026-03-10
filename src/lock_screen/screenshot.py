@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import shutil
 import subprocess
 import sys
 
@@ -16,23 +17,48 @@ def _run(cmd: list[str], output_path: str) -> bool:
         return False
 
 
+def _try_cosmic_screenshot(path: str) -> bool:
+    """Method 1: cosmic-screenshot (COSMIC desktop).
+
+    cosmic-screenshot does not allow choosing the output filename.
+    It saves as Screenshot_<datetime>.png in the directory given by -s
+    and prints the resulting path to stdout.
+    """
+    output_dir = os.path.dirname(path) or "."
+    try:
+        result = subprocess.run(
+            ["cosmic-screenshot", "-s", output_dir, "--interactive=false"],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        actual_path = result.stdout.strip()
+        if actual_path and os.path.isfile(actual_path) and os.path.getsize(actual_path) > 0:
+            if actual_path != path:
+                shutil.move(actual_path, path)
+            return os.path.isfile(path) and os.path.getsize(path) > 0
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        pass
+    return False
+
+
 def _try_grim(path: str) -> bool:
-    """Method 1: grim (wlroots-compatible: sway, COSMIC, etc.)."""
+    """Method 2: grim (wlroots-compatible: sway, COSMIC, etc.)."""
     return _run(["grim", path], path)
 
 
 def _try_gnome_screenshot(path: str) -> bool:
-    """Method 2: gnome-screenshot (GNOME Wayland/X11)."""
+    """Method 3: gnome-screenshot (GNOME Wayland/X11)."""
     return _run(["gnome-screenshot", "-f", path], path)
 
 
 def _try_spectacle(path: str) -> bool:
-    """Method 3: spectacle (KDE Plasma)."""
+    """Method 4: spectacle (KDE Plasma)."""
     return _run(["spectacle", "-b", "-n", "-f", "-o", path], path)
 
 
 def _try_xdg_portal(path: str) -> bool:
-    """Method 4: XDG Desktop Portal (universal Wayland fallback)."""
+    """Method 5: XDG Desktop Portal (universal Wayland fallback)."""
     script = """\
 import os, sys, shutil
 from urllib.parse import urlparse, unquote
@@ -80,17 +106,17 @@ sys.exit(1)
 
 
 def _try_scrot(path: str) -> bool:
-    """Method 5: scrot (X11 fallback)."""
+    """Method 6: scrot (X11 fallback)."""
     return _run(["scrot", path], path)
 
 
 def _try_import(path: str) -> bool:
-    """Method 6: ImageMagick import (X11 fallback)."""
+    """Method 7: ImageMagick import (X11 fallback)."""
     return _run(["import", "-window", "root", path], path)
 
 
 METHODS = [
-    _try_grim,
+    _try_cosmic_screenshot,
     _try_gnome_screenshot,
     _try_spectacle,
     _try_xdg_portal,
@@ -101,4 +127,16 @@ METHODS = [
 
 def capture(path: str) -> bool:
     """Try each screenshot method in order, return True on first success."""
-    return any(method(path) for method in METHODS)
+    print(f"Attempting to capture screenshot to {path} using multiple methods...", file=sys.stderr)
+    for method in METHODS:
+        try:
+            method(path)
+            if os.path.isfile(path) and os.path.getsize(path) > 0:
+                print(f"  {method.__name__} succeeded.", file=sys.stderr)
+                return True
+            else:
+                print(f"  {method.__name__} ran but did not produce a valid screenshot.", file=sys.stderr)
+        except Exception as e:
+            print(f"Warning: {method.__name__} failed with error: {e}", file=sys.stderr)
+            continue
+    return False

@@ -58,6 +58,13 @@ def main(argv: list[str] | None = None) -> None:
     fd, img_path = tempfile.mkstemp(suffix=".png")
     os.close(fd)
 
+    if os.environ.get("LOCK_SCREEN_DEBUG", "False").lower() == "true":
+        import debugpy
+        debugpy.listen(("localhost", 5678))
+        print("Waiting for debugger to attach on port 5678...")
+        debugpy.wait_for_client()
+        print("Debugger attached, continuing execution.")
+
     try:
         # Capture screenshot
         if not capture(img_path):

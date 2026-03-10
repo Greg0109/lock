@@ -24,5 +24,6 @@ select = ["E", "F", "I", "W"]
 
 [dependency-groups]
 dev = [
+    "debugpy>=1.8.20",
     "ruff>=0.15.5",
 ]
