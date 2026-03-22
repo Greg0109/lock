@@ -116,6 +116,7 @@ def _try_import(path: str) -> bool:
 
 
 METHODS = [
+    _try_grim,
     _try_cosmic_screenshot,
     _try_gnome_screenshot,
     _try_spectacle,
