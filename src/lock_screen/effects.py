@@ -10,6 +10,61 @@ def _convert(args: list[str]) -> None:
     subprocess.run(["convert", *args], check=True)
 
 
+def process_output_fast(
+    output_name: str,
+    width: int,
+    height: int,
+    output_path: str,
+    pixelate_scale: int,
+    blur_radius: float,
+    blur_sigma: float,
+    icon_path: str | None,
+) -> None:
+    """Capture one Wayland output via grim and apply all effects in a single pipeline.
+
+    grim emits uncompressed PPM on stdout; ImageMagick reads it and writes the final PNG
+    in one pass — no intermediate decode/encode of the full-size image.
+    """
+    grim = subprocess.Popen(
+        ["grim", "-t", "ppm", "-o", output_name, "-"],
+        stdout=subprocess.PIPE,
+    )
+    convert_cmd: list[str] = [
+        "convert",
+        "ppm:-",
+        "-scale",
+        f"{pixelate_scale}%",
+        "-scale",
+        "1000%",
+        "-blur",
+        f"{blur_radius},{blur_sigma}",
+        "-resize",
+        f"{width}x{height}!",
+    ]
+    if icon_path:
+        convert_cmd += [icon_path, "-gravity", "center", "-composite"]
+    convert_cmd += ["-define", "png:compression-level=1", output_path]
+
+    try:
+        result = subprocess.run(
+            convert_cmd,
+            stdin=grim.stdout,
+            check=False,
+            capture_output=True,
+        )
+    finally:
+        if grim.stdout:
+            grim.stdout.close()
+        grim.wait()
+
+    if grim.returncode != 0:
+        raise subprocess.CalledProcessError(grim.returncode, grim.args)
+    if result.returncode != 0:
+        raise subprocess.CalledProcessError(
+            result.returncode, convert_cmd, output=result.stdout, stderr=result.stderr
+        )
+
+
 def pixelate(image_path: str, scale_down: int = 10) -> None:
     """Pixelate an image by scaling down then back up."""
     _convert(

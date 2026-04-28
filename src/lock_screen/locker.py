@@ -19,6 +19,25 @@ def lock(image_path: str) -> None:
         _lock_x11(image_path)
 
 
+def get_wayland_outputs() -> list[dict[str, int | str]]:
+    """Public wrapper around output detection for use by fast path."""
+    return _get_wayland_outputs()
+
+
+def lock_per_output(images_by_name: dict[str, str]) -> None:
+    """Run swaylock with pre-rendered per-output images. Wayland-only."""
+    if not images_by_name:
+        raise ValueError("images_by_name must not be empty")
+    image_args: list[str] = []
+    for name, path in images_by_name.items():
+        image_args += ["-i", f"{name}:{path}"]
+    try:
+        subprocess.run(["swaylock", "-f", *image_args], check=True)
+    except FileNotFoundError:
+        print("Error: swaylock not found. sudo apt install swaylock", file=sys.stderr)
+        sys.exit(1)
+
+
 def _get_wayland_outputs() -> list[dict[str, int | str]]:
     """Get output names and geometry for Wayland compositors.
 
