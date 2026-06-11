@@ -10,7 +10,7 @@ import tempfile
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
-from lock_screen.effects import blur, composite_icon, pixelate, process_output_fast
+from lock_screen.effects import composite_icon, pixelate_and_blur, process_output_fast
 from lock_screen.locker import get_wayland_outputs, lock, lock_per_output
 from lock_screen.screenshot import capture
 
@@ -51,7 +51,25 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         action="store_true",
         help="Skip overlaying the lock icon",
     )
-    return parser.parse_args(argv)
+    parser.add_argument(
+        "--render-scale",
+        type=float,
+        default=0.5,
+        help=(
+            "Fast-path render resolution as a fraction of output size; swaylock scales "
+            "it back up. Lower is faster, 1.0 disables downscaling (default: 0.5)"
+        ),
+    )
+    args = parser.parse_args(argv)
+    if not 0 < args.render_scale <= 1:
+        parser.error("--render-scale must be in (0, 1]")
+    return args
+
+
+def _temp_dir() -> str:
+    """Create a temp dir, preferring tmpfs to avoid disk IO."""
+    base = "/dev/shm" if os.path.isdir("/dev/shm") else None
+    return tempfile.mkdtemp(prefix="lock-screen-", dir=base)
 
 
 def _try_fast_path(args: argparse.Namespace) -> bool:
@@ -73,7 +91,7 @@ def _try_fast_path(args: argparse.Namespace) -> bool:
     if not args.no_icon and args.icon.is_file():
         icon_path = str(args.icon)
 
-    temp_dir = tempfile.mkdtemp(prefix="lock-screen-")
+    temp_dir = _temp_dir()
     try:
         def _process(o: dict[str, int | str]) -> tuple[str, str] | None:
             name = str(o["name"])
@@ -90,6 +108,7 @@ def _try_fast_path(args: argparse.Namespace) -> bool:
                     blur_radius=args.blur_radius,
                     blur_sigma=args.blur_sigma,
                     icon_path=icon_path,
+                    render_scale=args.render_scale,
                 )
             except Exception as e:
                 print(f"Warning: fast path failed for {name}: {e}", file=sys.stderr)
@@ -126,7 +145,9 @@ def main(argv: list[str] | None = None) -> None:
         return
 
     # Fallback: single full-screen capture + sequential effects.
-    fd, img_path = tempfile.mkstemp(suffix=".png")
+    fd, img_path = tempfile.mkstemp(
+        suffix=".png", dir="/dev/shm" if os.path.isdir("/dev/shm") else None
+    )
     os.close(fd)
 
     try:
@@ -141,8 +162,12 @@ def main(argv: list[str] | None = None) -> None:
             )
             sys.exit(1)
 
-        pixelate(img_path, scale_down=args.pixelate_scale)
-        blur(img_path, radius=args.blur_radius, sigma=args.blur_sigma)
+        pixelate_and_blur(
+            img_path,
+            scale_down=args.pixelate_scale,
+            radius=args.blur_radius,
+            sigma=args.blur_sigma,
+        )
 
         if not args.no_icon and args.icon.is_file():
             composite_icon(img_path, str(args.icon))

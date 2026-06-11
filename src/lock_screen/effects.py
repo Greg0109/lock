@@ -2,12 +2,16 @@
 
 from __future__ import annotations
 
+import shutil
 import subprocess
+
+# ImageMagick 7 deprecates `convert`; prefer `magick` when available.
+IM_BINARY = shutil.which("magick") or "convert"
 
 
 def _convert(args: list[str]) -> None:
-    """Run an ImageMagick convert command."""
-    subprocess.run(["convert", *args], check=True)
+    """Run an ImageMagick command."""
+    subprocess.run([IM_BINARY, *args], check=True)
 
 
 def process_output_fast(
@@ -19,30 +23,46 @@ def process_output_fast(
     blur_radius: float,
     blur_sigma: float,
     icon_path: str | None,
+    render_scale: float = 0.5,
 ) -> None:
     """Capture one Wayland output via grim and apply all effects in a single pipeline.
 
     grim emits uncompressed PPM on stdout; ImageMagick reads it and writes the final PNG
     in one pass — no intermediate decode/encode of the full-size image.
+
+    The image is rendered at ``render_scale`` of the output resolution (blur kernel and
+    icon scaled to match) and swaylock stretches it back to full size. The image is
+    pixelated/blurred anyway, so the quality loss is invisible while blur and PNG
+    encoding run on a fraction of the pixels.
     """
+    out_w = max(1, round(width * render_scale))
+    out_h = max(1, round(height * render_scale))
+
     grim = subprocess.Popen(
         ["grim", "-t", "ppm", "-o", output_name, "-"],
         stdout=subprocess.PIPE,
     )
     convert_cmd: list[str] = [
-        "convert",
+        IM_BINARY,
         "ppm:-",
         "-scale",
         f"{pixelate_scale}%",
         "-scale",
-        "1000%",
+        f"{out_w}x{out_h}!",
         "-blur",
-        f"{blur_radius},{blur_sigma}",
-        "-resize",
-        f"{width}x{height}!",
+        f"{blur_radius * render_scale:g},{blur_sigma * render_scale:g}",
     ]
     if icon_path:
-        convert_cmd += [icon_path, "-gravity", "center", "-composite"]
+        convert_cmd += [
+            "(",
+            icon_path,
+            "-resize",
+            f"{render_scale * 100:g}%",
+            ")",
+            "-gravity",
+            "center",
+            "-composite",
+        ]
     convert_cmd += ["-define", "png:compression-level=1", output_path]
 
     try:
@@ -63,6 +83,27 @@ def process_output_fast(
         raise subprocess.CalledProcessError(
             result.returncode, convert_cmd, output=result.stdout, stderr=result.stderr
         )
+
+
+def pixelate_and_blur(
+    image_path: str,
+    scale_down: int = 10,
+    radius: float = 2,
+    sigma: float = 5,
+) -> None:
+    """Pixelate and blur an image in a single ImageMagick pass."""
+    _convert(
+        [
+            image_path,
+            "-scale",
+            f"{scale_down}%",
+            "-scale",
+            "1000%",
+            "-blur",
+            f"{radius},{sigma}",
+            image_path,
+        ]
+    )
 
 
 def pixelate(image_path: str, scale_down: int = 10) -> None:
@@ -184,18 +225,12 @@ def composite_icon(image_path: str, icon_path: str) -> None:
     )
     icon_w, icon_h = (int(v) for v in result.stdout.strip().split())
 
+    # Chain all composites in a single command: one decode/encode of the
+    # full image instead of one per display.
+    args: list[str] = [image_path, "-gravity", "NorthWest"]
     for display in displays:
         center_x = display["x"] + (display["width"] - icon_w) // 2
         center_y = display["y"] + (display["height"] - icon_h) // 2
-        _convert(
-            [
-                image_path,
-                icon_path,
-                "-geometry",
-                f"+{center_x}+{center_y}",
-                "-gravity",
-                "NorthWest",
-                "-composite",
-                image_path,
-            ]
-        )
+        args += [icon_path, "-geometry", f"+{center_x}+{center_y}", "-composite"]
+    args.append(image_path)
+    _convert(args)

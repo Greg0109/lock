@@ -136,7 +136,10 @@ def capture(path: str) -> bool:
                 print(f"  {method.__name__} succeeded.", file=sys.stderr)
                 return True
             else:
-                print(f"  {method.__name__} ran but did not produce a valid screenshot.", file=sys.stderr)
+                print(
+                    f"  {method.__name__} ran but did not produce a valid screenshot.",
+                    file=sys.stderr,
+                )
         except Exception as e:
             print(f"Warning: {method.__name__} failed with error: {e}", file=sys.stderr)
             continue

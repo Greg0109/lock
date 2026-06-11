@@ -103,6 +103,7 @@ lock-screen
 ```
 usage: lock-screen [-h] [--icon ICON] [--pixelate-scale N]
                    [--blur-radius R] [--blur-sigma S] [--no-icon]
+                   [--render-scale F]
 
 Lock screen with blurred/pixelated screenshot background
 
@@ -113,6 +114,9 @@ options:
   --blur-radius R     Blur radius (default: 2)
   --blur-sigma S      Blur sigma (default: 5)
   --no-icon           Skip overlaying the lock icon
+  --render-scale F    Fast-path render resolution as a fraction of output size;
+                      swaylock scales it back up. Lower is faster, 1.0 disables
+                      downscaling (default: 0.5)
 ```
 
 ### Examples

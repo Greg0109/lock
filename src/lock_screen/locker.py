@@ -8,6 +8,8 @@ import subprocess
 import sys
 import tempfile
 
+from lock_screen.effects import IM_BINARY
+
 
 def lock(image_path: str) -> None:
     """Lock the screen using the appropriate backend."""
@@ -32,7 +34,9 @@ def lock_per_output(images_by_name: dict[str, str]) -> None:
     for name, path in images_by_name.items():
         image_args += ["-i", f"{name}:{path}"]
     try:
-        subprocess.run(["swaylock", "-f", *image_args], check=True)
+        # Images may be rendered below output resolution; stretch scales them
+        # back up (aspect ratios match, so no distortion).
+        subprocess.run(["swaylock", "-f", "-s", "stretch", *image_args], check=True)
     except FileNotFoundError:
         print("Error: swaylock not found. sudo apt install swaylock", file=sys.stderr)
         sys.exit(1)
@@ -142,7 +146,7 @@ def _build_per_output_image_args(image_path: str, temp_dir: str) -> list[str]:
 
             subprocess.run(
                 [
-                    "convert",
+                    IM_BINARY,
                     image_path,
                     "-crop",
                     f"{width}x{height}+{crop_x}+{crop_y}",
@@ -166,7 +170,9 @@ def _build_per_output_image_args(image_path: str, temp_dir: str) -> list[str]:
 def _lock_wayland(image_path: str) -> None:
     """Lock using swaylock for Wayland sessions."""
     try:
-        with tempfile.TemporaryDirectory(prefix="lock-screen-") as temp_dir:
+        with tempfile.TemporaryDirectory(
+            prefix="lock-screen-", dir="/dev/shm" if os.path.isdir("/dev/shm") else None
+        ) as temp_dir:
             image_args = _build_per_output_image_args(image_path, temp_dir)
             cmd = ["swaylock", "-f", *(image_args or ["-i", image_path])]
             subprocess.run(cmd, check=True)
