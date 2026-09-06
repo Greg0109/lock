@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import platform
 import subprocess
 import sys
 import tempfile
@@ -13,6 +14,10 @@ def lock(image_path: str) -> None:
     """Lock the screen using the appropriate backend."""
     if platform.system() == "Darwin":
         from lock_screen.platform_macos import lock as _lock
+
+        _lock(image_path)
+    elif os.environ.get("XDG_SESSION_TYPE", "") == "wayland":
+        _lock_wayland(image_path)
     else:
         _lock_x11(image_path)
 

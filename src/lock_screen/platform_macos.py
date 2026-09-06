@@ -176,6 +176,25 @@ def is_session_locked() -> bool:
 # -- Screen locking --------------------------------------------------------
 
 
+def _trigger_immediate_lock() -> bool:
+    """Trigger macOS's native Lock Screen (^⌘Q) via System Events.
+
+    Locks instantly regardless of the "require password after sleep" delay,
+    unlike `pmset displaysleepnow`. Requires the calling app (Terminal, etc.)
+    to have Accessibility permission to send keystrokes via System Events.
+    """
+    script = (
+        'tell application "System Events" to keystroke "q" using {control down, command down}'
+    )
+    try:
+        result = subprocess.run(["osascript", "-e", script], capture_output=True, text=True)
+        if result.returncode != 0:
+            print(f"  Immediate lock failed: {result.stderr.strip()}", file=sys.stderr)
+        return result.returncode == 0
+    except FileNotFoundError:
+        return False
+
+
 def _wait_for_unlock() -> None:
     """Block until the session locks and then unlocks."""
     deadline = time.monotonic() + 15
@@ -196,7 +215,7 @@ def _wait_for_unlock() -> None:
 
 
 def lock(image_path: str) -> None:
-    """Lock macOS: swap wallpaper, sleep display, restore after unlock."""
+    """Lock macOS: swap wallpaper, trigger the lock screen, restore after unlock."""
     abs_path = os.path.abspath(image_path)
     originals = get_wallpapers()
 
@@ -206,11 +225,13 @@ def lock(image_path: str) -> None:
         set_wallpaper(abs_path)
         time.sleep(0.5)
 
-        try:
-            subprocess.run(["pmset", "displaysleepnow"], check=True)
-        except (subprocess.CalledProcessError, FileNotFoundError):
-            print("Error: Failed to lock screen via pmset.", file=sys.stderr)
-            sys.exit(1)
+        if not _trigger_immediate_lock():
+            print("  Falling back to pmset displaysleepnow.", file=sys.stderr)
+            try:
+                subprocess.run(["pmset", "displaysleepnow"], check=True)
+            except (subprocess.CalledProcessError, FileNotFoundError):
+                print("Error: Failed to lock screen.", file=sys.stderr)
+                sys.exit(1)
 
         _wait_for_unlock()
     finally:

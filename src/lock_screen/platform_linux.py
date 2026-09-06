@@ -115,6 +115,7 @@ def try_import(path: str) -> bool:
 
 SCREENSHOT_METHODS = [
     try_cosmic_screenshot,
+    try_grim,
     try_gnome_screenshot,
     try_spectacle,
     try_xdg_portal,
