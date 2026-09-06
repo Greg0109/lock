@@ -1,6 +1,6 @@
 [project]
 name = "lock-screen"
-version = "0.1.0"
+version = "1.0.0b1"
 description = "Wayland/X11 lock screen with custom blur and pixelation effects"
 readme = "README.md"
 authors = [
