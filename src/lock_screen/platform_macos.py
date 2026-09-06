@@ -18,6 +18,7 @@ def delete_temp_file(path: str) -> None:
     except Exception as e:
         print(f"Warning: Failed to delete temp file {path}: {e}", file=sys.stderr)
 
+
 # -- Screenshot methods ----------------------------------------------------
 
 
@@ -183,9 +184,7 @@ def _trigger_immediate_lock() -> bool:
     unlike `pmset displaysleepnow`. Requires the calling app (Terminal, etc.)
     to have Accessibility permission to send keystrokes via System Events.
     """
-    script = (
-        'tell application "System Events" to keystroke "q" using {control down, command down}'
-    )
+    script = 'tell application "System Events" to keystroke "q" using {control down, command down}'
     try:
         result = subprocess.run(["osascript", "-e", script], capture_output=True, text=True)
         if result.returncode != 0:
